@@ -2,12 +2,13 @@
 #coding:utf-8
 
 import sys
-sys.path.append('../gen-py')
+sys.path.append('./gen-py')
 import time
 import httplib
 import urllib
 import json
 import random
+import itertools
 
 from third import xinge
 import gevent
@@ -21,12 +22,15 @@ from util import http
 from config.const import SUCCESS, PARAM_NOTIFY_ERROR, PARAM_LIST_ERROR, \
                          MSG_ERROR, BROADCAST_ERROR, RET_UNKNOWN_ERROR
 
+from model.user_push import UserPush
+from model.user_detail import UserDetail
+
 NOTIFY_EXPIRE_TIME = 86400 #TODO 移到配置文件中
-ANDROID_ACCESS_ID = 2100084785
-ANDROID_ACCESS_TOKEN = '0846d3db888ec8346a5c0b70a702e407'
+ANDROID_ACCESS_ID = 2100106617
+ANDROID_ACCESS_TOKEN = 'a797bf2b660b362736ea220a8e9f4b4e'#secret key
 IOS_ACCESS_ID = 2200098803
 IOS_ACCESS_TOKEN = '5719cb32acd728b1ae3bdafa6f8db7a1'
-SCHEMA_PREFIX = 'myb://'
+SCHEMA_PREFIX = 'meiyuan://'
 
 gevent.monkey.patch_all(ssl=False)
 
@@ -36,8 +40,8 @@ SCHEMA = {
     LandingType.COMMUNITY_DETAIL: '%s%s' % (SCHEMA_PREFIX, 'tweet'),
     LandingType.FRIEND: '%s%s' % (SCHEMA_PREFIX, 'friend'),
     LandingType.PRIVATE_MSG: '%s%s' % (SCHEMA_PREFIX, 'pmsg'),
-    LandingType.SYSTEM_MSG: '%s%s' % (SCHEMA_PREFIX, 'smsg')
-    LandingType.USER: '%s%s' % (SCHEMA_PREFIX, 'user')
+    LandingType.SYSTEM_MSG: '%s%s' % (SCHEMA_PREFIX, 'smsg'),
+    LandingType.USER: '%s%s' % (SCHEMA_PREFIX, 'user'),
 }
 
 class PushServiceHandler:
@@ -50,11 +54,11 @@ class PushServiceHandler:
         url = SCHEMA.get(ltype, '')
         param = {}
 
-        if ltype == NotifyType.WAP:
+        if ltype == LandingType.WAP:
             param['url'] = notify.url
-        elif ltype == NotifyType.COMMUNITY_DETAIL:
+        elif ltype == LandingType.COMMUNITY_DETAIL:
             param['tid'] = notify.tid
-        elif ltype == NotifyType.PRIVATE_MSG or ltype == NotifyType.USER:
+        elif ltype == LandingType.PRIVATE_MSG or ltype == LandingType.USER:
             param['uid'] = notify.uid
 
         if url and param:
@@ -68,9 +72,9 @@ class PushServiceHandler:
         custom['t'] = notify.mtype
         param = {}
         schema = ''
-        if mtype == MessageType.NOTIFY:#类型为通知，需要生成schema
+        if notify.mtype == MessageType.NOTIFY:#类型为通知，需要生成schema
             schema = self._build_schema(notify)
-        elif mtype == MessageType.EMAILRED: #类型为私信小红点，需额外uid参数，告诉客户端是哪个人的小红点
+        elif notify.mtype == MessageType.EMAILRED: #类型为私信小红点，需额外uid参数，告诉客户端是哪个人的小红点
             param['uid'] = notify.uid
             
         param['j'] = schema
@@ -87,7 +91,7 @@ class PushServiceHandler:
         msg.custom = self._get_msg_custom(notify)
         return msg
 
-    def __build_ios_msg(self, notify):
+    def _build_ios_msg(self, notify):
         msg = xinge.MessageIOS()
         msg.alert = notify.content
         if notify.mtype == MessageType.NOTIFY:
@@ -111,12 +115,12 @@ class PushServiceHandler:
     def ping(self): 
         return 'hello, world'
 
-    def _build_msg(notify, device_type):
+    def _build_msg(self, notify, device_type):
         msg = None
         if device_type == DeviceType.IOS:
-            msg = _build_ios_msg(notify)
+            msg = self._build_ios_msg(notify)
         elif device_type == DeviceType.ANDROID:
-            msg = _build_android_msg(notify)
+            msg = self._build_android_msg(notify)
         else:
             logger.warning('msg[device type error] device_type[%s] notify[%s]' % (device_type, notify))
 
@@ -138,7 +142,7 @@ class PushServiceHandler:
             return SUCCESS
 
         device_type = request.device_type
-        msg = _build_msg(notify, device_type)
+        msg = self._build_msg(notify, device_type)
 
         if not msg:
             logger.warning('msg[msg generate error]')
@@ -169,12 +173,12 @@ class PushServiceHandler:
         if not isinstance(notify, Notify):
             logger.warning('msg[param error] param[%s]' % request)
             return PARAM_NOTIFY_ERROR
+        msg = self._build_msg(notify, device_type)
         if not msg:
             logger.warning('msg[msg generate error]')
             return MSG_ERROR
 
-        msg = _build_msg(notify, device_type)
-        gevent.spawn(self.__push_single_device, device_id, msg, device_type)
+        gevent.spawn(self._push_single_device, device_id, msg, device_type)
         logger.info('single push called over')
         return SUCCESS
 
@@ -217,3 +221,115 @@ class PushServiceHandler:
                 return BROADCAST_ERROR
 
         return RET_UNKNOWN_ERROR
+
+    @timer('op tag end')
+    def optag(self, request):
+        logger.info('msg[optag begin] request[%s]' % request)
+        if request.uid == 0 or not isinstance(request.uid, int):
+            logger.warning('msg[invalid uid] uid[%s]' % request.uid)
+            return PARAM_UID_ERROR
+
+        token_group = {}
+        if request.xg_device_token == '':
+            r = UserPush.get_device_info(request.uid)
+            for k, g in itertools.groupby(r, lambda x:x.device_type):
+                token_group[k] = [i.xg_device_token for i in g]
+        else:
+            r = UserPush.get_device_type(request.xg_device_token)
+            if not r:
+                logger.warning('msg[no this token in table] token[%s]' % request.xg_device_token)
+                return SUCCESS
+            token_group.setdefault(r, []).append(request.xg_device_token)
+
+        tag_list = request.tag_list
+        tag_list.append('all_city')
+        tag_list.append('all_school')
+
+        for dtype in token_group:
+            tag_token_list = []
+            xg_device_token = token_group[dtype]
+            for token in xg_device_token:
+                if dtype == DeviceType.ANDROID:
+                    l = [xinge.TagTokenPair(x, token) for x in tag_list+['android']] 
+                if dtype == DeviceType.IOS:
+                    l = [xinge.TagTokenPair(x, token) for x in tag_list+['ios']] 
+                tag_token_list += l
+
+            size = len(tag_token_list)
+            num = 19 
+            slice_tag_list = [tag_token_list[i:i+num] for i in range(0, size, num)]
+
+            for l in slice_tag_list:
+                result = (0, '')
+                if dtype == DeviceType.ANDROID:
+                    if request.op == 1:
+                        result = self.android_push_app.BatchSetTag(l)
+                    elif request.op == 2:
+                        result = self.android_push_app.BatchDelTag(l)
+                if dtype == DeviceType.IOS:
+                    if request.op == 1:
+                        result = self.ios_push_app.BatchSetTag(l)
+                    elif request.op == 2:
+                        result = self.ios_push_app.BatchDelTag(l)
+
+                print result
+                if result[0] != 0:
+                    logger.warning('msg[set tag error] tags[%s] uid[%s] tagpair[%s] op[%s] ret[%s]' % (tag_list, request.uid, l, request.op, result))
+                    print 'msg[set tag error] tags[%s] uid[%s] tagpair[%s] op[%s] ret[%s]' % (tag_list, request.uid, l, request.op, result)
+
+
+        return SUCCESS
+
+    def _tag_push(self, tag_list, msg, device_type, push_task_id):
+        retry = 2
+        ret = None
+        for i in range(retry):
+            if device_type == DeviceType.IOS:
+                ret = self.ios_push_app.PushTags(0, tag_list, 'AND', msg, 1)
+            if device_type == DeviceType.ANDROID:
+                ret = self.android_push_app.PushTags(0, tag_list, 'AND', msg)
+            logger.info('msg[condition push result] retry[%s] device_type[%s] tags[%s] msg[%s] ret[%s] push_task_id[%s]' % (i, device_type, tag_list, msg, ret, push_task_id))
+            if ret[0] == 0:
+                return ret[2]
+
+        return -1
+
+
+    def condition_push(self, request):
+        logger.info('msg[condition push begin] request[%s]' % request)
+
+        notify = request.notify
+        push_task_id = request.push_task_id
+
+        ios_msg = self._build_msg(notify, DeviceType.IOS)
+        android_msg = self._build_msg(notify, DeviceType.ANDROID)
+
+        city = request.city.split(',')
+        school = request.school.split(',')
+        ukind_verify = request.ukind_verify.split(',')
+
+        task_list = []
+        push_id_list = []
+        i = 1
+        for tag_list in itertools.product(city, school, ukind_verify):
+            if request.device_type == 0:
+                task_list.append(gevent.spawn(self._tag_push, tag_list, ios_msg, DeviceType.IOS, push_task_id))
+                task_list.append(gevent.spawn(self._tag_push, tag_list, android_msg, DeviceType.IOS, push_task_id))
+                i += 2
+            if request.device_type == 1:
+                task_list.append(gevent.spawn(self._tag_push, tag_list, android_msg, DeviceType.IOS, push_task_id))
+                i += 1
+            if request.device_type == 2:
+                task_list.append(gevent.spawn(self._tag_push, tag_list, ios_msg, DeviceType.IOS, push_task_id))
+                i += 1
+
+            if i % 1000 == 0:#控制并发
+                gevent.joinall(task_list, timeout=5)
+                for task in task_list:
+                    push_id_list.append(task.value)
+                task_list = []
+
+        gevent.joinall(task_list, timeout=5)
+        for task in task_list:
+            push_id_list.append(task.value)
+        logger.info('push_task_id[%s] push_id_list%s' % (push_task_id, push_id_list))
