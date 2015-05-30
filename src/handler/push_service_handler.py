@@ -30,8 +30,8 @@ from model.user_detail import UserDetail
 NOTIFY_EXPIRE_TIME = 86400 #TODO 移到配置文件中
 ANDROID_ACCESS_ID = 2100106617
 ANDROID_ACCESS_TOKEN = 'a797bf2b660b362736ea220a8e9f4b4e'#secret key
-IOS_ACCESS_ID = 2200098803
-IOS_ACCESS_TOKEN = '5719cb32acd728b1ae3bdafa6f8db7a1'
+IOS_ACCESS_ID = 2200118927
+IOS_ACCESS_TOKEN = '662a91c3bf96cc9e18111339764f22d2'
 SCHEMA_PREFIX = 'meiyuan://'
 
 gevent.monkey.patch_all(ssl=False)
@@ -104,7 +104,7 @@ class PushServiceHandler:
         return msg
 
     @timer('push end')
-    def _push_single_device(self, device_id, msg, device_type, env=1):#xinge.XingeApp.ENV_DEV):#ios上线要修改
+    def _push_single_device(self, device_id, msg, device_type, env=2):#xinge.XingeApp.ENV_DEV):#ios上线要修改成1
         result = None
         if device_type == DeviceType.ANDROID:
             logger.info('push start:device_id[%s] device_type[%s] msg_type[%s] title[%s] content[%s] expire[%s] custom[%s]' % (device_id, device_type, msg.type, msg.title, msg.content, msg.expireTime, msg.custom))
@@ -179,6 +179,7 @@ class PushServiceHandler:
         if not msg:
             logger.warning('msg[msg generate error]')
             return MSG_ERROR
+
 
         gevent.spawn(self._push_single_device, device_id, msg, device_type)
         logger.info('single push called over')
