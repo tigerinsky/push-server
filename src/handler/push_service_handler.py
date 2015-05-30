@@ -2,6 +2,8 @@
 #coding:utf-8
 
 import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
 sys.path.append('./gen-py')
 import time
 import httplib
@@ -126,7 +128,7 @@ class PushServiceHandler:
 
         return msg
 
-    @timer('batch notify over')
+    #@timer('batch notify over')
     def batch_notify(self, request):
         logger.info('batch notify request begin, request[%s]' % request)
         notify = request.notify;
@@ -165,7 +167,7 @@ class PushServiceHandler:
 
         return SUCCESS
 
-    @timer('single push called cost')
+    #@timer('single push called cost')
     def single_notify(self, request):
         device_id = request.device_id
         notify = request.notify
@@ -182,7 +184,7 @@ class PushServiceHandler:
         logger.info('single push called over')
         return SUCCESS
 
-    @timer('broadcast end')
+    #@timer('broadcast end')
     def broadcast(self, request):
         logger.info('broadcast begin request[%s]' % request)
         notify = request.notify
@@ -222,7 +224,31 @@ class PushServiceHandler:
 
         return RET_UNKNOWN_ERROR
 
-    @timer('op tag end')
+    def _del_tag(self, token_group):
+        for dtype in token_group:
+            for token in token_group[dtype]:
+                result = ()
+                if dtype == DeviceType.ANDROID:
+                    result = self.android_push_app.QueryTokenTags(token)
+                if dtype == DeviceType.IOS:
+                    result = self.ios_push_app.QueryTokenTags(token)
+                logger.info('msg[query tag] token[%s] result[%s]' % (token, result))
+
+                tag_list = []
+                if result[0] == 0:
+                    tag_list = result[2]
+
+                if tag_list:
+                    tag_pair = [xinge.TagTokenPair(i, token) for i in tag_list]
+
+                    if dtype == DeviceType.ANDROID:
+                        result = self.android_push_app.BatchDelTag(tag_pair)
+                    if dtype == DeviceType.IOS:
+                        result = self.ios_push_app.BatchDelTag(tag_pair)
+
+                    logger.info('msg[delete tag] token[%s] tag_pair[%s] result[%s]' % (token, tag_pair, result))
+
+    #@timer('op tag end')
     def optag(self, request):
         logger.info('msg[optag begin] request[%s]' % request)
         if request.uid == 0 or not isinstance(request.uid, int):
@@ -241,6 +267,9 @@ class PushServiceHandler:
                 return SUCCESS
             token_group.setdefault(r, []).append(request.xg_device_token)
 
+        if request.op == 1:
+            self._del_tag(token_group)
+
         tag_list = request.tag_list
         tag_list.append('all_city')
         tag_list.append('all_school')
@@ -250,8 +279,10 @@ class PushServiceHandler:
             xg_device_token = token_group[dtype]
             for token in xg_device_token:
                 if dtype == DeviceType.ANDROID:
+                    UserPush.update_tags(token, ','.join(tag_list+['android']))
                     l = [xinge.TagTokenPair(x, token) for x in tag_list+['android']] 
                 if dtype == DeviceType.IOS:
+                    UserPush.update_tags(token, ','.join(tag_list+['ios']))
                     l = [xinge.TagTokenPair(x, token) for x in tag_list+['ios']] 
                 tag_token_list += l
 
@@ -272,10 +303,8 @@ class PushServiceHandler:
                     elif request.op == 2:
                         result = self.ios_push_app.BatchDelTag(l)
 
-                print result
                 if result[0] != 0:
                     logger.warning('msg[set tag error] tags[%s] uid[%s] tagpair[%s] op[%s] ret[%s]' % (tag_list, request.uid, l, request.op, result))
-                    print 'msg[set tag error] tags[%s] uid[%s] tagpair[%s] op[%s] ret[%s]' % (tag_list, request.uid, l, request.op, result)
 
 
         return SUCCESS

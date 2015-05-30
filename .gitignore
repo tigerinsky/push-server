@@ -2,3 +2,4 @@
 *.log*
 src/gen-*
 *.bak
+*.out

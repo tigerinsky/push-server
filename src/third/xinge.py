@@ -248,6 +248,11 @@ class TagTokenPair(object):
     def __init__(self, tag, token):
         self.tag = str(tag)
         self.token = str(token)
+    def __str__(self):
+        s = '(%s, %s)' % (self.tag, self.token)
+        return s
+    def __repr__(self):
+        return self.__str__()
 
 class XingeApp(object):
     DEVICE_ALL = 0
