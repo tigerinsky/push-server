@@ -1,0 +1,4 @@
+thrift
+MySQL-python
+SQLALchemy
+gevent
