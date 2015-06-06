@@ -29,7 +29,7 @@ struct Notify {
     3: required string content = '';//推送内容，mtype=1时有用，其它时候为''
     4: required string title='';
     5: required string url='';
-    6: required i32 tid=0;
+    6: required i64 tid=0;
     7: required i32 uid=0;
     8: required i32 num=-1;//小红点增加数字
 }

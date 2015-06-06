@@ -33,6 +33,7 @@ ANDROID_ACCESS_TOKEN = 'a797bf2b660b362736ea220a8e9f4b4e'#secret key
 IOS_ACCESS_ID = 2200118927
 IOS_ACCESS_TOKEN = '662a91c3bf96cc9e18111339764f22d2'
 SCHEMA_PREFIX = 'meiyuan://'
+IOS_ENV = 2
 
 gevent.monkey.patch_all(ssl=False)
 
@@ -104,7 +105,7 @@ class PushServiceHandler:
         return msg
 
     @timer('push end')
-    def _push_single_device(self, device_id, msg, device_type, env=2):#xinge.XingeApp.ENV_DEV):#ios上线要修改成1
+    def _push_single_device(self, device_id, msg, device_type, env=IOS_ENV):#xinge.XingeApp.ENV_DEV):#ios上线要修改成1
         result = None
         if device_type == DeviceType.ANDROID:
             logger.info('push start:device_id[%s] device_type[%s] msg_type[%s] title[%s] content[%s] expire[%s] custom[%s]' % (device_id, device_type, msg.type, msg.title, msg.content, msg.expireTime, msg.custom))
@@ -203,20 +204,29 @@ class PushServiceHandler:
             return PARAM_NOTIFY_ERROR
 
         device_type = request.device_type
-        msg = self._build_msg(notify, device_type)
-        if not msg:
+        ios_msg = self._build_msg(notify, DeviceType.IOS)
+        android_msg = self._build_msg(notify, DeviceType.ANDROID)
+        if not ios_msg or not android_msg:
             logger.warning('msg[msg generate error]')
             return MSG_ERROR
 
         if send_time:
-            msg.sendTime = send_time
+            ios_msg.sendTime = send_time
+            android_msg.sendTime = send_time
 
         ret = None
         if device_type == DeviceType.ANDROID:
-            ret = self.android_push_app.PushAllDevices(0, msg)
+            ret = self.android_push_app.PushAllDevices(0, android_msg)
+            logger.info('ret[%s]' % ret)
         if device_type == DeviceType.IOS:
-            ret = self.ios_push_app.PushAllDevices(0, msg, 1)
-        logger.info('ret[%s]' % ret)
+            ret = self.ios_push_app.PushAllDevices(0, ios_msg, IOS_ENV)
+            logger.info('ret[%s]' % ret)
+        else:
+            ret1 = self.android_push_app.PushAllDevices(0, android_msg)
+            ret2 = self.ios_push_app.PushAllDevices(0, ios_msg, IOS_ENV)
+            logger.info('ret1[%s], ret2[%s]' % (ret1, ret2))
+            #ret = ret1 and ret2
+
         if ret:
             if ret[0] == 0:
                 return SUCCESS
@@ -248,6 +258,22 @@ class PushServiceHandler:
                         result = self.ios_push_app.BatchDelTag(tag_pair)
 
                     logger.info('msg[delete tag] token[%s] tag_pair[%s] result[%s]' % (token, tag_pair, result))
+
+    def _get_condition_push_device(self, city, school, ukind_verify):
+        limit = 5000
+        offset  = 0
+        while True:
+            users = UserDetail.get_user(city, school, ukind_verify, offset, limit)
+            if users == None:
+                yield []
+                break
+            uid_list = [u.uid for u in users]
+            logger.info("msg[get condition push] city[%s] school[%s] ukind_verify[%s] uid%s offset[%s] limit[%s]" % (city, school, ukind_verify, uid_list, offset, limit))
+            device_infos = UserPush.get_device_list(uid_list)
+            yield [(d.device_type, d.xg_device_token) for d in device_infos]
+            if len(uid_list) < limit:
+                break
+            offset += limit
 
     #@timer('op tag end')
     def optag(self, request):
@@ -310,12 +336,12 @@ class PushServiceHandler:
 
         return SUCCESS
 
-    def _tag_push(self, tag_list, msg, device_type, push_task_id):
+    def _tag_push(self, tag_list, msg, device_type, push_task_id):#暂时没用上
         retry = 2
         ret = None
         for i in range(retry):
             if device_type == DeviceType.IOS:
-                ret = self.ios_push_app.PushTags(0, tag_list, 'AND', msg, 1)
+                ret = self.ios_push_app.PushTags(0, tag_list, 'AND', msg, IOS_ENV)
             if device_type == DeviceType.ANDROID:
                 ret = self.android_push_app.PushTags(0, tag_list, 'AND', msg)
             logger.info('msg[condition push result] retry[%s] device_type[%s] tags[%s] msg[%s] ret[%s] push_task_id[%s]' % (i, device_type, tag_list, msg, ret, push_task_id))
@@ -327,12 +353,11 @@ class PushServiceHandler:
 
     def condition_push(self, request):
         logger.info('msg[condition push begin] request[%s]' % request)
+        verify_map = {'unverify': 0, 'verify': 1}
 
         notify = request.notify
         push_task_id = request.push_task_id
 
-        ios_msg = self._build_msg(notify, DeviceType.IOS)
-        android_msg = self._build_msg(notify, DeviceType.ANDROID)
 
         city = request.city.split(',')
         school = request.school.split(',')
@@ -342,24 +367,16 @@ class PushServiceHandler:
         push_id_list = []
         i = 1
         for tag_list in itertools.product(city, school, ukind_verify):
-            if request.device_type == 0:
-                task_list.append(gevent.spawn(self._tag_push, tag_list, ios_msg, DeviceType.IOS, push_task_id))
-                task_list.append(gevent.spawn(self._tag_push, tag_list, android_msg, DeviceType.IOS, push_task_id))
-                i += 2
-            if request.device_type == 1:
-                task_list.append(gevent.spawn(self._tag_push, tag_list, android_msg, DeviceType.IOS, push_task_id))
-                i += 1
-            if request.device_type == 2:
-                task_list.append(gevent.spawn(self._tag_push, tag_list, ios_msg, DeviceType.IOS, push_task_id))
-                i += 1
-
-            if i % 1000 == 0:#控制并发
+            for device_list in self._get_condition_push_device(tag_list[0], tag_list[1], verify_map.get(tag_list[2], 0)):
+                for device in device_list:
+                    if request.device_type == device[0] or request.device_type == 0:
+                        if device[0] == DeviceType.IOS:
+                            ios_msg = self._build_msg(notify, DeviceType.IOS)
+                            task_list.append(gevent.spawn(self._push_single_device, device[1], ios_msg, device[0]))
+                        if device[0] == DeviceType.ANDROID:
+                            android_msg = self._build_msg(notify, DeviceType.ANDROID)
+                            task_list.append(gevent.spawn(self._push_single_device, device[1], android_msg, device[0]))
+                        i+=1
+            if i % 700 == 0:
                 gevent.joinall(task_list, timeout=5)
-                for task in task_list:
-                    push_id_list.append(task.value)
                 task_list = []
-
-        gevent.joinall(task_list, timeout=5)
-        for task in task_list:
-            push_id_list.append(task.value)
-        logger.info('push_task_id[%s] push_id_list%s' % (push_task_id, push_id_list))

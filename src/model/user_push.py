@@ -29,6 +29,11 @@ class UserPush(Base):
         return r
 
     @classmethod
+    def get_device_list(cls, uid_list):
+        r = Session.query(cls.xg_device_token, cls.device_type).filter(cls.uid.in_(uid_list)).all()
+        return r
+
+    @classmethod
     def get_device_type(cls, xg_device_token):
         r = Session.query(cls.device_type).filter(cls.xg_device_token == xg_device_token).first()
 

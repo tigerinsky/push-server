@@ -12,18 +12,20 @@ notify = Notify()
 
 notify.mtype = 1
 notify.ltype = 1
-notify.content = "首页推送"
+notify.content = "只是测试，收到请忽略"
 
-request = SingleNotifyRequest()
+request = ConditionPushRequest()
 
 request.notify = notify
+import pdb
+#pdb.set_trace()
 
-request.device_type = 1
-#request.device_id = '51fbd091ee0cf35c1384259b9b9c446df6987f83db0507d4c9b6dba689e389a5'
-request.device_id = '9952e67639162056606d1fdc95febc7888853145380aa13b69cfffbf924e8a59'
-request.device_id = '6c5790e3ead9d3dbb6dac57c84f08dcb52a7817e8e1ecd1ee6babb5ceb4a19cf'
-#request.device_id = '8cdada03a93446ef47df83da01870872822107dd'
-request.device_id = 'c845da05818f0d544265ac73bf4fa4ee1069c830'
+request.device_type = 0
+#request.city = "北京,上海"
+request.city = 'all_city'
+request.school = "all_school"
+#request.school = "清华"
+request.ukind_verify = "unverify"
 
 try:
     transport = TSocket.TSocket('localhost', 8998)
@@ -35,7 +37,7 @@ try:
 
     # Connect!
     transport.open()
-    print client.single_notify(request);
+    client.condition_push(request);
 except Exception, e:
     print 'xxx%s' % e
 
