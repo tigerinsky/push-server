@@ -352,6 +352,9 @@ class PushServiceHandler:
 
 
     def condition_push(self, request):
+        gevent.spawn(self._condition_push, request)
+    
+    def _condition_push(self, request):
         logger.info('msg[condition push begin] request[%s]' % request)
         verify_map = {'unverify': 0, 'verify': 1}
 
