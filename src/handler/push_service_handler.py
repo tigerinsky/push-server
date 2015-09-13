@@ -28,11 +28,11 @@ from model.user_push import UserPush
 from model.user_detail import UserDetail
 
 NOTIFY_EXPIRE_TIME = 86400 #TODO 移到配置文件中
-ANDROID_ACCESS_ID = 2100106617
-ANDROID_ACCESS_TOKEN = 'a797bf2b660b362736ea220a8e9f4b4e'#secret key
+ANDROID_ACCESS_ID = 2100143172
+ANDROID_ACCESS_TOKEN = '378a5775f37cf9c38f71b6df3e26fc56'#secret key
 IOS_ACCESS_ID = 2200118927
 IOS_ACCESS_TOKEN = '662a91c3bf96cc9e18111339764f22d2'
-SCHEMA_PREFIX = 'meiyuan://'
+SCHEMA_PREFIX = 'faxian://'
 IOS_ENV = 2
 
 gevent.monkey.patch_all(ssl=False)
