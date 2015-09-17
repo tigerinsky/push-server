@@ -45,6 +45,8 @@ SCHEMA = {
     LandingType.PRIVATE_MSG: '%s%s' % (SCHEMA_PREFIX, 'pmsg'),
     LandingType.SYSTEM_MSG: '%s%s' % (SCHEMA_PREFIX, 'smsg'),
     LandingType.USER: '%s%s' % (SCHEMA_PREFIX, 'user'),
+    LandingType.COMMENT: '%s%s' % (SCHEMA_PREFIX, 'comment'),
+    LandingType.ZAN: '%s%s' % (SCHEMA_PREFIX, 'zan')
 }
 
 class PushServiceHandler:
