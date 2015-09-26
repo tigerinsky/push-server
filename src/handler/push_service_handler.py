@@ -28,8 +28,8 @@ from model.user_push import UserPush
 from model.user_detail import UserDetail
 
 NOTIFY_EXPIRE_TIME = 86400 #TODO 移到配置文件中
-ANDROID_ACCESS_ID = 2100143172
-ANDROID_ACCESS_TOKEN = '378a5775f37cf9c38f71b6df3e26fc56'#secret key
+ANDROID_ACCESS_ID = 2100148352
+ANDROID_ACCESS_TOKEN = '026e1c733c2f1cfe64d4ca28c25f1761'#secret key
 IOS_ACCESS_ID = 2200147012
 IOS_ACCESS_TOKEN = '419c083c8efe260d0668af2e807de0bc'
 SCHEMA_PREFIX = 'faxian://'
